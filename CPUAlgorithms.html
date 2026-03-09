@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CPU Scheduler Algorithms</title>
+    <style>
+        :root {
+            --bg-gradient: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            --glass: rgba(255, 255, 255, 0.4);
+            --glass-border: rgba(255, 255, 255, 0.7);
+            --accent: #2563eb;
+            --text: #1e293b;
+            --text-light: #64748b;
+        }
+
+        body {
+            margin: 0; min-height: 100vh;
+            font-family: 'Inter', system-ui, sans-serif;
+            background: var(--bg-gradient);
+            color: var(--text);
+            display: flex; justify-content: center; align-items: center;
+            overflow-x: hidden; position: relative;
+        }
+
+        
+        .bg-bubbles { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: -1; }
+        .bubble {
+            position: absolute; background: rgba(255, 255, 255, 0.4);
+            backdrop-filter: blur(8px); border-radius: 50%;
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            animation: float 25s infinite linear;
+        }
+        @keyframes float {
+            0% { transform: translateY(110vh) rotate(0deg); opacity: 0; }
+            10% { opacity: 0.6; }
+            90% { opacity: 0.6; }
+            100% { transform: translateY(-20vh) rotate(360deg); opacity: 0; }
+        }
+
+        .container {
+            width: 95%; max-width: 1100px;
+            background: var(--glass);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 32px; padding: 40px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.05);
+            display: grid; grid-template-columns: 320px 1fr; gap: 30px;
+        }
+
+        .glass-card {
+            background: rgba(255, 255, 255, 0.25);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px; padding: 24px;
+            box-shadow: 0 8px 32px rgba(31, 38, 135, 0.07);
+        }
+
+        h1 { grid-column: 1 / -1; margin: 0 0 10px 0; font-weight: 800; font-size: 1.7rem; color: #0f172a; }
+
+        .input-group { margin-bottom: 18px; }
+        label { display: block; font-size: 0.65rem; font-weight: 800; color: var(--text-light); text-transform: uppercase; margin-bottom: 6px; letter-spacing: 0.5px; }
+        
+        input, select {
+            width: 100%; padding: 12px; border-radius: 12px; border: 1px solid var(--glass-border);
+            background: rgba(255, 255, 255, 0.6); font-size: 0.9rem; outline: none; box-sizing: border-box; transition: 0.3s;
+        }
+        input:focus { border-color: var(--accent); background: white; box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1); }
+
+        button {
+            width: 100%; padding: 14px; border-radius: 12px; border: none;
+            background: var(--accent); color: white; font-weight: 700;
+            cursor: pointer; transition: 0.3s; font-size: 0.85rem;
+        }
+        button:hover { transform: translateY(-2px); filter: brightness(1.1); }
+
+        .queue-container {
+            display: flex; align-items: center; gap: 12px; height: 75px;
+            padding: 0 20px; background: rgba(255, 255, 255, 0.15); border-radius: 18px;
+            margin-bottom: 25px; border: 1px solid var(--glass-border); overflow-x: auto;
+        }
+        .queue-bubble {
+            min-width: 48px; height: 48px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 800; color: white; text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+            border: 2px solid white; backdrop-filter: blur(4px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .gantt-chart {
+            display: flex; height: 55px; border-radius: 14px;
+            background: rgba(0, 0, 0, 0.03); overflow: hidden; margin-top: 15px;
+            border: 1px solid var(--glass-border);
+        }
+        .gantt-block {
+            height: 100%; display: flex; align-items: center; justify-content: center;
+            font-size: 0.8rem; font-weight: 800; position: relative; color: white;
+            border-right: 1px solid rgba(255,255,255,0.3);
+        }
+        .time-label { position: absolute; bottom: 2px; font-size: 0.6rem; font-weight: 400; }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th { text-align: left; padding: 12px; font-size: 0.65rem; color: var(--text-light); text-transform: uppercase; border-bottom: 1px solid var(--glass-border); }
+        td { padding: 12px; font-size: 0.85rem; border-bottom: 1px solid rgba(255,255,255,0.2); font-weight: 500; }
+
+        .status-badge {
+            background: white; padding: 4px 12px; border-radius: 20px;
+            font-size: 0.75rem; font-weight: 800; color: var(--accent);
+            border: 1px solid var(--glass-border);
+        }
+
+        /* Range Slider Styling */
+        input[type=range] { height: 6px; background: rgba(0,0,0,0.1); border-radius: 5px; appearance: none; }
+        input[type=range]::-webkit-slider-thumb { appearance: none; width: 16px; height: 16px; background: var(--accent); border-radius: 50%; cursor: pointer; }
+
+        @media (max-width: 850px) { .container { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+
+<div class="bg-bubbles" id="bubble-bg"></div>
+
+<div class="container">
+    <h1>CPU Flow <span style="font-weight: 300; color: var(--text-light);">Visualizer</span></h1>
+
+    <div class="sidebar">
+        <div class="glass-card">
+            <label>Process Properties</label>
+            <div class="input-group">
+                <input type="number" id="arr" placeholder="Arrival Time" value="0" min="0">
+            </div>
+            <div class="input-group">
+                <input type="number" id="bur" placeholder="Burst Time" value="5" min="1">
+            </div>
+            <div class="input-group" id="prio-group" style="display:none;">
+                <label>Priority (Lower = Higher)</label>
+                <input type="number" id="prio" placeholder="Priority" value="1">
+            </div>
+            <button onclick="addProcess()">Add to Ready Pool</button>
+            <div id="counter" style="font-size: 0.7rem; text-align:center; margin-top:12px; color: var(--text-light); font-weight: 600;">0 Processes in Pool</div>
+        </div>
+        
+        <div class="glass-card" style="margin-top: 20px;">
+            <label>Execution Controls</label>
+            <div class="input-group">
+                <label>Simulation Speed</label>
+                <input type="range" id="speed" min="100" max="1500" value="800">
+                <div style="display: flex; justify-content: space-between; font-size: 0.6rem; margin-top: 5px;">
+                    <span>Slower</span><span>Faster</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="main-content">
+        <div class="glass-card" style="margin-bottom: 20px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <div class="status-badge" id="cpu-status">SYSTEM IDLE</div>
+                <div id="clock" style="font-family: monospace; font-weight: 800; color: #1e293b; background: white; padding: 4px 12px; border-radius: 8px; border: 1px solid var(--glass-border);">00s</div>
+            </div>
+            
+            <label>Ready Queue </label>
+            <div class="queue-container" id="ready-queue"></div>
+
+            <div style="display: grid; grid-template-columns: 1.5fr 1fr; gap: 15px;">
+                <div class="input-group">
+                    <label>Scheduling Algorithm</label>
+                    <select id="algo" onchange="updateUI()">
+                        <option value="FCFS">First Come First Served</option>
+                        <option value="SJF">Shortest Job First (NP)</option>
+                        <option value="RR">Round Robin (Time Sliced)</option>
+                        <option value="PRIO">Priority Scheduling</option>
+                    </select>
+                </div>
+                <div class="input-group" id="q-group" style="display:none;">
+                    <label title="The fixed time slice each process gets before being interrupted">Time Quantum (Slice)</label>
+                    <input type="number" id="quantum" value="2" min="1">
+                </div>
+            </div>
+            
+            <button onclick="startSimulation()" style="background: #1e293b;">Execute Tasks</button>
+        </div>
+
+        <div class="glass-card">
+            <label>Gantt Chart Timeline</label>
+            <div class="gantt-chart" id="gantt"></div>
+            
+            <div style="margin-top: 25px; overflow-x: auto;">
+                <table>
+                    <thead>
+                        <tr><th>PID</th><th>Arrival</th><th>Burst</th><th>Exit</th><th>Wait ($WT$)</th><th>TAT ($TAT$)</th></tr>
+                    </thead>
+                    <tbody id="stats"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    
+    const bg = document.getElementById('bubble-bg');
+    for(let i=0; i<12; i++) {
+        const b = document.createElement('div');
+        b.className = 'bubble';
+        const size = Math.random() * 80 + 40 + 'px';
+        b.style.width = size; b.style.height = size;
+        b.style.left = Math.random() * 100 + '%';
+        b.style.animationDelay = Math.random() * 8 + 's';
+        b.style.animationDuration = (Math.random() * 15 + 20) + 's';
+        bg.appendChild(b);
+    }
+
+    let processes = [];
+    let isRunning = false;
+    const colors = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#475569'];
+
+    function updateUI() {
+        const algo = document.getElementById('algo').value;
+        document.getElementById('prio-group').style.display = (algo === 'PRIO') ? 'block' : 'none';
+        document.getElementById('q-group').style.display = (algo === 'RR') ? 'block' : 'none';
+    }
+
+    function addProcess() {
+        if(isRunning) return;
+        processes.push({
+            id: processes.length + 1,
+            arr: +document.getElementById('arr').value,
+            bur: +document.getElementById('bur').value,
+            rem: +document.getElementById('bur').value,
+            prio: +document.getElementById('prio').value,
+            color: colors[processes.length % colors.length],
+            completed: false, inQueue: false
+        });
+        document.getElementById('counter').innerText = `${processes.length} Processes in Pool`;
+        updateTable();
+    }
+
+    function updateTable() {
+        document.getElementById('stats').innerHTML = processes.map(p => `
+            <tr><td>P${p.id}</td><td>${p.arr}s</td><td>${p.bur}s</td>
+            <td id="ex-${p.id}">-</td><td id="wt-${p.id}">-</td><td id="tat-${p.id}">-</td></tr>
+        `).join('');
+    }
+
+    async function startSimulation() {
+        if (processes.length === 0 || isRunning) return;
+        isRunning = true;
+        let time = 0, finished = 0, currentP = null, qCount = 0;
+        let rrQueue = [];
+        const algo = document.getElementById('algo').value;
+        const qSize = +document.getElementById('quantum').value;
+        const gantt = document.getElementById('gantt');
+        
+        gantt.innerHTML = '';
+        processes.forEach(p => { p.inQueue = false; p.rem = p.bur; p.completed = false; });
+
+        const step = () => {
+            processes.forEach(p => {
+                if(p.arr <= time && !p.completed && !p.inQueue) {
+                    rrQueue.push(p); p.inQueue = true;
+                }
+            });
+
+            if (!currentP && rrQueue.length > 0) {
+                if(algo === 'SJF') rrQueue.sort((a,b) => a.bur - b.bur);
+                if(algo === 'PRIO') rrQueue.sort((a,b) => a.prio - b.prio);
+                currentP = rrQueue.shift();
+                qCount = 0;
+                
+                const div = document.createElement('div');
+                div.className = 'gantt-block';
+                div.style.backgroundColor = currentP.color;
+                div.style.flexGrow = 0;
+                div.innerHTML = `P${currentP.id}<span class="time-label" style="left:4px">${time}</span>`;
+                gantt.appendChild(div);
+            }
+
+            if (currentP) {
+                document.getElementById('cpu-status').innerText = `EXECUTING P${currentP.id}`;
+                currentP.rem--; qCount++;
+                let block = gantt.lastElementChild;
+                block.style.flexGrow = parseFloat(block.style.flexGrow || 0) + 1;
+
+                if (currentP.rem === 0) {
+                    currentP.completed = true;
+                    currentP.exit = time + 1;
+                    block.innerHTML += `<span class="time-label" style="right:4px">${time + 1}</span>`;
+                    const tat = currentP.exit - currentP.arr;
+                    const wt = tat - currentP.bur;
+                    document.getElementById(`ex-${currentP.id}`).innerText = currentP.exit + 's';
+                    document.getElementById(`tat-${currentP.id}`).innerText = tat + 's';
+                    document.getElementById(`wt-${currentP.id}`).innerText = wt + 's';
+                    currentP = null; finished++;
+                } else if (algo === 'RR' && qCount === qSize) {
+                    block.innerHTML += `<span class="time-label" style="right:4px">${time + 1}</span>`;
+                    processes.forEach(p => { if(p.arr <= time+1 && !p.completed && !p.inQueue) { rrQueue.push(p); p.inQueue = true; } });
+                    rrQueue.push(currentP);
+                    currentP = null;
+                }
+            } else {
+                document.getElementById('cpu-status').innerText = "CPU IDLE";
+            }
+
+            document.getElementById('ready-queue').innerHTML = rrQueue.map(p => 
+                `<div class="queue-bubble" style="background:${p.color}cc">P${p.id}</div>`).join('');
+            
+            time++;
+            document.getElementById('clock').innerText = `${time.toString().padStart(2, '0')}s`;
+
+            if (finished < processes.length) {
+                
+                let delay = 1700 - document.getElementById('speed').value;
+                setTimeout(step, delay);
+            } else {
+                document.getElementById('cpu-status').innerText = "COMPLETE";
+                isRunning = false;
+            }
+        };
+        step();
+    }
+</script>
+</body>
+</html>
